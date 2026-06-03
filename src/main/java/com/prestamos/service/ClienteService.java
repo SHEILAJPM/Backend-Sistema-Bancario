@@ -11,6 +11,7 @@ import com.prestamos.repository.ClienteRepository;
 import com.prestamos.repository.PrestamoRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -37,6 +38,7 @@ public class ClienteService {
     }
 
     @Transactional
+    @CacheEvict(value = "dashboard_metricas", allEntries = true)
     public ClienteResponse crear(ClienteRequest request) {
         if (clienteRepository.existsByDni(request.dni())) {
             throw new ConflictException("Ya existe un cliente con DNI: " + request.dni());
@@ -70,11 +72,16 @@ public class ClienteService {
     }
 
     @Transactional
+    @CacheEvict(value = "dashboard_metricas", allEntries = true)
     public void eliminar(Long id) {
         Cliente cliente = findOrThrow(id);
-        cliente.setActivo(false);
-        clienteRepository.save(cliente);
-        log.info("Cliente desactivado: id={}", id);
+        boolean tieneActivosOMora = cliente.getPrestamos().stream()
+            .anyMatch(p -> p.getEstado() == EstadoPrestamo.ACTIVO || p.getEstado() == EstadoPrestamo.EN_MORA);
+        if (tieneActivosOMora) {
+            throw new ConflictException("No se puede eliminar un cliente con préstamos activos o en mora");
+        }
+        clienteRepository.delete(cliente);
+        log.info("Cliente eliminado: id={}", id);
     }
 
     public long contarClientes() {
